@@ -65,6 +65,8 @@ function setupFirebase() {
             }
             isAuthReady = true;
             
+            console.log(`[AUTH] Usuário ID: ${userId}. Autenticação pronta.`);
+            
             // Após autenticação, inicia a escuta do Firestore
             startRealtimeListener();
         });
@@ -96,25 +98,28 @@ function startRealtimeListener() {
         if (docSnapshot.exists()) {
             const data = docSnapshot.data();
             estadoGlobal = {
-                ...estadoGlobal, // Mantém defaults se faltar algo (segurança)
+                // Garante que o estado anterior não se perca se algum campo falhar
+                ...estadoGlobal, 
                 ...data,
-                cartelasCadastradas: data.cartelasCadastradas || {}
+                // Garante que cartelasCadastradas seja sempre um objeto, mesmo que vazio
+                cartelasCadastradas: data.cartelasCadastradas || {} 
             };
             
+            console.log(`[SYNC] Estado lido do Firestore. Cartelas: ${Object.keys(estadoGlobal.cartelasCadastradas).length}`);
+            
         } else {
-            // Documento não existe: Inicializa o jogo no Firestore
-            console.log("Documento do jogo não encontrado. Inicializando...");
+            // Documento não existe: Isto significa que precisamos criá-lo.
+            console.warn("[SYNC] Documento do jogo não encontrado. Tentando criar o estado inicial...");
             estadoGlobal = criarNovoEstado(DEFAULT_MAX, {});
-            salvarEstado(estadoGlobal, true); // Cria o documento
+            salvarEstado(estadoGlobal, true); // Tenta criar o documento
         }
         
         // Renderiza a interface da página atual
         renderizarPaginaAtual();
     }, (error) => {
-        console.error("Erro ao receber atualização em tempo real:", error);
-        // Exibe um alerta de erro de conexão/permissão
+        console.error("[ERRO DE FIREBASE] Falha na escuta em tempo real:", error.code, error.message);
         if (error.code === 'permission-denied') {
-            alert("ERRO de Permissão: Verifique as Regras de Segurança do Firestore. O acesso público pode estar bloqueado.");
+            alert("ERRO CRÍTICO de Permissão: O Firebase está bloqueando a leitura ou escrita. Verifique suas REGRAS DE SEGURANÇA!");
         }
     });
 }
@@ -153,16 +158,17 @@ async function salvarEstado(estado, isNewDoc = false) {
     
     try {
         if (isNewDoc) {
-            // Cria o documento pela primeira vez
             await setDoc(docRef, estado);
         } else {
-            // Atualiza o estado completo em uma única operação
             await updateDoc(docRef, estado);
         }
+        console.log(`[SAVE] Estado salvo com sucesso. Novo Max: ${estado.intervaloMax}. Cartelas: ${Object.keys(estado.cartelasCadastradas).length}`);
     } catch (e) {
         console.error("ERRO CRÍTICO ao salvar estado do jogo:", e);
-        // Não usamos alert aqui para não interromper loops, o onSnapshot lidará com o erro
+        // Não usamos alert aqui para não interromper loops, o onSnapshot lidará com o erro de permissão.
+        return false;
     }
+    return true;
 }
 
 // ----------------------------------------------------
@@ -178,13 +184,15 @@ async function mudarConfiguracao() {
         return;
     }
     
-    // 1. Cria o novo estado mantendo as cartelas
     const novoEstado = criarNovoEstado(novoMax, estadoGlobal.cartelasCadastradas);
     
-    // 2. Salva o novo estado no Firestore (incluindo o novo intervaloMax)
-    await salvarEstado(novoEstado, false);
+    const saved = await salvarEstado(novoEstado, false);
     
-    alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
+    if(saved) {
+        alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
+    } else {
+        alert('Erro ao salvar a nova configuração. Verifique as permissões do Firebase.');
+    }
 }
 
 async function sortearBola() {
@@ -219,7 +227,6 @@ async function sortearBola() {
     let vencedor = null;
     for (const codigo in estado.cartelasCadastradas) {
         const numerosCartela = estado.cartelasCadastradas[codigo];
-        // Verifica se TODOS os números da cartela estão nas bolas sorteadas
         const isVencedor = numerosCartela.every(n => estado.bolasSorteadas.includes(n));
         
         if (isVencedor) {
@@ -311,16 +318,23 @@ async function cadastrarCartela() {
         // Atualiza a cópia local do estado e salva
         estado.cartelasCadastradas[codigo] = numeros;
         
-        await salvarEstado(estado); 
+        const saved = await salvarEstado(estado); 
         
-        document.getElementById('input-codigo').value = '';
-        document.getElementById('input-numeros').value = '';
-        mensagemDiv.textContent = `Cartela '${codigo}' cadastrada/atualizada com sucesso!`;
-        mensagemDiv.className = 'text-success mt-2';
+        if (saved) {
+            document.getElementById('input-codigo').value = '';
+            document.getElementById('input-numeros').value = '';
+            mensagemDiv.textContent = `Cartela '${codigo}' cadastrada/atualizada com sucesso!`;
+            mensagemDiv.className = 'text-success mt-2';
+        } else {
+             // A função salvarEstado já loga o erro, aqui apenas indicamos para o usuário
+            mensagemDiv.textContent = 'Erro ao salvar a cartela. Verifique as permissões do Firebase.';
+            mensagemDiv.className = 'text-danger mt-2';
+        }
+
 
     } catch (e) {
-        console.error("Erro ao cadastrar cartela:", e);
-        mensagemDiv.textContent = 'Erro ao salvar a cartela no banco de dados.';
+        console.error("Erro geral ao cadastrar cartela:", e);
+        mensagemDiv.textContent = 'Erro inesperado. Verifique o console.';
         mensagemDiv.className = 'text-danger mt-2';
     }
 }
@@ -333,10 +347,14 @@ async function resetarJogoCompleto(manterCartelas = false) {
     
     const novoEstado = criarNovoEstado(estado.intervaloMax, cartelasParaManter);
     
-    await salvarEstado(novoEstado, false);
+    const saved = await salvarEstado(novoEstado, false);
     
-    const msg = manterCartelas ? 'Jogo reiniciado! Cartelas mantidas.' : 'Reset Geral: Jogo e cartelas apagados.';
-    alert(msg);
+    if (saved) {
+        const msg = manterCartelas ? 'Jogo reiniciado! Cartelas mantidas.' : 'Reset Geral: Jogo e cartelas apagados.';
+        alert(msg);
+    } else {
+        alert('Erro ao resetar o jogo. Verifique as permissões do Firebase.');
+    }
 }
 
 // ----------------------------------------------------
@@ -526,7 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-sortear-auto').addEventListener('click', toggleSorteioAutomatico);
 
     } else if (document.body.id === 'admin-page') {
-        // Novo Listener para o botão Salvar Configuração
+        // Listener para o botão Salvar Configuração
         document.getElementById('btn-salvar-config').addEventListener('click', mudarConfiguracao);
         
         document.getElementById('btn-cadastrar').addEventListener('click', cadastrarCartela);
