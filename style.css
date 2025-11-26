@@ -1,0 +1,81 @@
+/* Estilo Personalizado para o Bingo */
+body {
+    background-color: #f7f9fc;
+}
+
+.bingo-header {
+    background: linear-gradient(135deg, #e30022 0%, #ff6e40 100%);
+    color: white;
+    padding: 20px 0;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    margin-bottom: 20px;
+    border-bottom: 5px solid #c00;
+}
+
+#ultima-bola {
+    font-size: 8rem;
+    font-weight: bold;
+    color: white;
+    background-color: #007bff;
+    border: 10px solid #0056b3;
+    border-radius: 50%;
+    width: 150px;
+    height: 150px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 20px auto;
+    box-shadow: 0 0 20px rgba(0, 123, 255, 0.7);
+    transition: transform 0.1s ease-in-out;
+}
+
+.bola-animada {
+    transform: scale(1.1);
+    animation: pulse 0.5s ease-out;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1.05); }
+}
+
+.bolas-sorteadas-painel {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    min-height: 100px;
+}
+
+.bola-sorteada-item {
+    display: inline-block;
+    background-color: #343a40;
+    color: white;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin: 3px;
+    font-size: 0.9rem;
+}
+
+.cartelas-section {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.analise-section {
+    background-color: #fff3cd; 
+    border-left: 5px solid #ffc107;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+footer {
+    padding: 10px 0;
+    margin-top: 30px;
+    border-top: 1px solid #ccc;
+    background-color: #eee;
+    text-align: center;
+    font-size: 0.8rem;
+}
