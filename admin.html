@@ -27,6 +27,7 @@
                     </div>
                     <div class="card-body">
                         
+                        <!-- Opção de Bolas -->
                         <div class="mb-3">
                             <label for="select-bolas" class="form-label">Opção de Bolas</label>
                             <div class="input-group">
@@ -36,9 +37,21 @@
                                     <option value="80">Bingo 80 Bolas (1-80)</option>
                                     <option value="30">Bingo 30 Bolas (1-30)</option>
                                 </select>
-                                <button id="btn-salvar-config" class="btn btn-success">Salvar Configuração</button>
+                                <button id="btn-salvar-bolas" class="btn btn-success">Salvar Configuração</button>
                             </div>
                             <small class="text-danger mt-2">Mudar a opção de bolas reinicia o jogo.</small>
+                        </div>
+                        
+                        <!-- Opção de Ordenação do Histórico -->
+                        <div class="mb-3">
+                            <label for="select-ordenacao" class="form-label">Ordenação do Histórico (Index)</label>
+                            <div class="input-group">
+                                <select id="select-ordenacao" class="form-select">
+                                    <option value="sequencial">Sequencial (Ordem de Saída)</option>
+                                    <option value="crescente">Crescente (Menor para o Maior)</option>
+                                </select>
+                                <button id="btn-salvar-ordenacao" class="btn btn-primary">Salvar Ordenação</button>
+                            </div>
                         </div>
 
                         <div id="admin-status" class="alert alert-info">
