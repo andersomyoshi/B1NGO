@@ -12,19 +12,20 @@ body {
     border-bottom: 5px solid #c00;
 }
 
+/* Estilo da Bola Sorteadora no Canto Esquerdo (AUMENTADO) */
 #ultima-bola {
-    font-size: 8rem;
+    font-size: 10rem; /* AUMENTADO */
     font-weight: bold;
     color: white;
     background-color: #007bff;
     border: 10px solid #0056b3;
     border-radius: 50%;
-    width: 150px;
-    height: 150px;
+    width: 200px; /* AUMENTADO */
+    height: 200px; /* AUMENTADO */
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: 20px auto;
+    margin: 0; 
     box-shadow: 0 0 20px rgba(0, 123, 255, 0.7);
     transition: transform 0.1s ease-in-out;
 }
@@ -44,8 +45,8 @@ body {
     background-color: #fff;
     border: 1px solid #ddd;
     border-radius: 8px;
-    padding: 15px;
-    min-height: 100px;
+    padding: 10px;
+    min-height: 200px; /* AUMENTADO para maior histórico */
 }
 
 .bola-sorteada-item {
@@ -69,6 +70,11 @@ body {
     border-left: 5px solid #ffc107;
     padding: 15px;
     border-radius: 5px;
+}
+
+.btn-small-control {
+    font-size: 0.8rem;
+    padding: 5px 10px;
 }
 
 footer {
