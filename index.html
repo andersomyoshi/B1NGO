@@ -19,26 +19,37 @@
     <div class="container-fluid">
         <div class="row justify-content-center">
 
-            <!-- Coluna Principal do Sorteio (Destaque) -->
-            <div class="col-lg-8 mb-4">
-                <div class="card shadow-sm p-3">
-                    <h3 class="card-title text-center text-primary">🎰 Última Bola Sorteada</h3>
-                    <div id="ultima-bola" class="text-center">—</div>
+            <!-- Painel Principal de Sorteio -->
+            <div class="col-lg-10 mb-4">
+                <div class="card shadow-sm p-4">
                     
-                    <!-- Botões de Controle -->
-                    <div class="d-grid gap-2 d-md-flex justify-content-center mb-3">
-                        <button id="btn-sortear" class="btn btn-success btn-lg">▶️ Sortear Próxima Bola</button>
-                        <button id="btn-sortear-auto" class="btn btn-primary btn-lg">▶️ Sorteio Automático</button>
-                    </div>
+                    <div class="row align-items-center">
+                        
+                        <!-- Coluna 1: Última Bola Sorteada (Canto Esquerdo - GRANDE) -->
+                        <div class="col-4 d-flex flex-column align-items-start justify-content-center">
+                            <h5 class="text-primary mb-2">Última Bola</h5>
+                            <div id="ultima-bola">—</div>
+                        </div>
 
+                        <!-- Coluna 2: Histórico de Sorteio (Canto Direito - MAIOR) -->
+                        <div class="col-8">
+                            <h5 class="text-secondary mb-2">🎱 Histórico de Sorteio</h5>
+                            <div id="bolas-sorteadas-lista" class="bolas-sorteadas-painel">
+                                <!-- Bolas sorteadas aparecerão aqui -->
+                            </div>
+
+                            <!-- Botões de Controle (Abaixo e Pequenos do Histórico) -->
+                            <div class="text-end mt-3">
+                                <small class="text-muted d-block mb-1">Pressione **ESPAÇO** para Sortear</small>
+                                <button id="btn-sortear" class="btn btn-success btn-small-control">▶️ Próxima Bola</button>
+                                <button id="btn-sortear-auto" class="btn btn-primary btn-small-control">▶️ Sorteio Automático</button>
+                            </div>
+                        </div>
+
+                    </div>
+                    
                     <div id="sorteio-status">
                         <!-- Mensagens de status/vencedor aparecerão aqui -->
-                    </div>
-                    
-                    <!-- Painel de Bolas Sorteadas -->
-                    <h5 class="mt-4 text-center">🎱 Histórico de Sorteio</h5>
-                    <div id="bolas-sorteadas-lista" class="bolas-sorteadas-painel">
-                        <!-- Bolas sorteadas aparecerão aqui -->
                     </div>
 
                 </div>
