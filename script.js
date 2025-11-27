@@ -13,7 +13,7 @@ let estadoGlobal = {
     bolasSorteadas: [],
     vencedorEncontrado: false,
     vencedorCodigo: '',
-    // cartelasCadastradas não está aqui, é salva separadamente
+    ordemHistorico: 'sequencial', // Novo: 'sequencial' ou 'crescente'
 };
 
 let cartelasCadastradas = {}; // Salvas e carregadas separadamente
@@ -26,7 +26,12 @@ function carregarEstado() {
     // Carrega o estado global
     const savedState = localStorage.getItem(GLOBAL_STATE_KEY);
     if (savedState) {
-        estadoGlobal = JSON.parse(savedState);
+        // Usa o estado salvo, mas garante que a nova propriedade exista, se ausente
+        const loadedState = JSON.parse(savedState);
+        estadoGlobal = {
+            ...loadedState,
+            ordemHistorico: loadedState.ordemHistorico || 'sequencial' 
+        };
     }
 
     // Carrega as cartelas
@@ -37,7 +42,7 @@ function carregarEstado() {
     
     // Se o estado estiver vazio (primeira execução), inicializa
     if (estadoGlobal.numerosASortear.length === 0 && estadoGlobal.bolasSorteadas.length === 0) {
-        estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax || DEFAULT_MAX, cartelasCadastradas);
+        estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax || DEFAULT_MAX, estadoGlobal.ordemHistorico);
         salvarEstado();
     }
 }
@@ -54,7 +59,7 @@ function salvarEstado() {
 // --- FUNÇÕES DE LÓGICA DO JOGO ---
 // ----------------------------------------------------
 
-function criarNovoEstado(novoMax, cartelas) {
+function criarNovoEstado(novoMax, ordemHistorico) {
     const max = novoMax || DEFAULT_MAX;
     const numeros = Array.from({ length: max }, (_, i) => i + 1);
     numeros.sort(() => Math.random() - 0.5); 
@@ -65,25 +70,33 @@ function criarNovoEstado(novoMax, cartelas) {
         bolasSorteadas: [],
         vencedorEncontrado: false,
         vencedorCodigo: '',
+        ordemHistorico: ordemHistorico || 'sequencial',
     };
 }
 
-function mudarConfiguracao() {
-    const select = document.getElementById('select-bolas');
-    const novoMax = parseInt(select.value);
+function mudarConfiguracao(tipo, valor) {
+    let deveReiniciar = false;
 
-    if (estadoGlobal.bolasSorteadas.length > 0 && 
-        !confirm(`Mudar para ${novoMax} bolas irá reiniciar o jogo e apagar as bolas sorteadas. Deseja continuar?`)) {
-        // Volta o seletor para o valor anterior, se cancelado
-        select.value = estadoGlobal.intervaloMax;
-        return;
+    if (tipo === 'bolas') {
+        const novoMax = parseInt(valor);
+        if (estadoGlobal.bolasSorteadas.length > 0 && 
+            !confirm(`Mudar para ${novoMax} bolas irá reiniciar o jogo e apagar as bolas sorteadas. Deseja continuar?`)) {
+            // Se cancelado, mantém o seletor na página Admin no valor anterior
+            if (document.getElementById('select-bolas')) {
+                document.getElementById('select-bolas').value = estadoGlobal.intervaloMax;
+            }
+            return;
+        }
+        estadoGlobal = criarNovoEstado(novoMax, estadoGlobal.ordemHistorico);
+        deveReiniciar = true;
+        alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
+    } else if (tipo === 'ordenacao') {
+        estadoGlobal.ordemHistorico = valor;
+        alert(`Ordenação do histórico alterada para: ${valor === 'sequencial' ? 'Sequencial (Ordem de Saída)' : 'Crescente (Menor para o Maior)'}`);
     }
-    
-    estadoGlobal = criarNovoEstado(novoMax, cartelasCadastradas);
+
     salvarEstado();
-    
-    alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
-    renderizarPaginaAtual(); // Renderiza com o novo estado
+    renderizarPaginaAtual(); 
 }
 
 function sortearBola() {
@@ -115,7 +128,6 @@ function sortearBola() {
     let vencedor = null;
     for (const codigo in cartelasCadastradas) {
         const numerosCartela = cartelasCadastradas[codigo];
-        // Verifica se TODOS os números da cartela estão nas bolas sorteadas
         const isVencedor = numerosCartela.every(n => estadoGlobal.bolasSorteadas.includes(n));
         
         if (isVencedor) {
@@ -227,7 +239,7 @@ function resetarJogoCompleto(manterCartelas = false) {
         cartelasCadastradas = {};
     }
     
-    estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax, cartelasCadastradas);
+    estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax, estadoGlobal.ordemHistorico);
     
     salvarEstado();
     
@@ -260,7 +272,7 @@ function renderizarIndex(estado, cartelas) {
     const ultimaBola = estado.bolasSorteadas.length > 0 ? estado.bolasSorteadas.slice(-1)[0] : '—';
     document.getElementById('ultima-bola').textContent = String(ultimaBola).padStart(2, '0');
     
-    renderizarBolasSorteadas(estado.bolasSorteadas);
+    renderizarBolasSorteadas(estado.bolasSorteadas, estado.ordemHistorico);
     
     const statusDiv = document.getElementById('sorteio-status');
     statusDiv.innerHTML = '';
@@ -277,7 +289,7 @@ function renderizarIndex(estado, cartelas) {
     document.getElementById('btn-sortear-auto').disabled = estado.vencedorEncontrado;
 }
 
-function renderizarBolasSorteadas(bolas) {
+function renderizarBolasSorteadas(bolas, ordem) {
     const listaBolas = document.getElementById('bolas-sorteadas-lista');
     listaBolas.innerHTML = '';
     
@@ -285,8 +297,15 @@ function renderizarBolasSorteadas(bolas) {
         listaBolas.innerHTML = '<p class="text-muted mt-2">Nenhuma bola sorteada ainda.</p>';
         return;
     }
+    
+    let bolasParaExibir = [...bolas]; // Faz uma cópia
 
-    bolas.forEach(bola => {
+    if (ordem === 'crescente') {
+        bolasParaExibir.sort((a, b) => a - b);
+    } 
+    // Se for 'sequencial', já está na ordem de saída
+
+    bolasParaExibir.forEach(bola => {
         const span = document.createElement('span');
         span.className = 'bola-sorteada-item';
         span.textContent = String(bola).padStart(2, '0');
@@ -311,11 +330,18 @@ function exibirVencedor(codigoVencedor, cartelas, bolasSorteadas) {
 // --- RENDERIZAÇÃO ADMIN (Controle) ---
 
 function renderizarAdmin(estado, cartelas) {
-    const select = document.getElementById('select-bolas');
-    if (select && select.value != estado.intervaloMax) {
-        select.value = estado.intervaloMax;
+    // 1. Sincroniza a seleção de Bolas
+    const selectBolas = document.getElementById('select-bolas');
+    if (selectBolas && selectBolas.value != estado.intervaloMax) {
+        selectBolas.value = estado.intervaloMax;
     }
     
+    // 2. Sincroniza a seleção de Ordenação
+    const selectOrdem = document.getElementById('select-ordenacao');
+    if (selectOrdem && selectOrdem.value != estado.ordemHistorico) {
+        selectOrdem.value = estado.ordemHistorico;
+    }
+
     document.getElementById('admin-status').innerHTML = `
         <p>Configuração Atual: **${estado.intervaloMax} Bolas** (1 - ${estado.intervaloMax})</p>
         <p>Bolas Restantes: **${estado.numerosASortear.length}**</p>
@@ -421,11 +447,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.body.id === 'index-page') {
         document.getElementById('btn-sortear').addEventListener('click', sortearBola);
         document.getElementById('btn-sortear-auto').addEventListener('click', toggleSorteioAutomatico);
+        
+        // Listener de teclado (apenas na página de sorteio)
+        document.addEventListener('keydown', (e) => {
+            // Verifica se a tecla pressionada é a barra de espaço
+            if (e.code === 'Space' && !e.repeat && !estadoGlobal.vencedorEncontrado) {
+                e.preventDefault(); // Impede o scroll da página
+                sortearBola();
+            }
+        });
 
     } else if (document.body.id === 'admin-page') {
-        // Listener para o botão Salvar Configuração (que chama mudarConfiguracao)
-        document.getElementById('btn-salvar-config').addEventListener('click', mudarConfiguracao);
         
+        // Listener para o botão Salvar Configuração (que chama mudarConfiguracao)
+        document.getElementById('btn-salvar-bolas').addEventListener('click', () => {
+            const select = document.getElementById('select-bolas');
+            mudarConfiguracao('bolas', select.value);
+        });
+        
+        // Listener para o botão Salvar Ordenação
+        document.getElementById('btn-salvar-ordenacao').addEventListener('click', () => {
+            const select = document.getElementById('select-ordenacao');
+            mudarConfiguracao('ordenacao', select.value);
+        });
+
         document.getElementById('btn-cadastrar').addEventListener('click', cadastrarCartela);
         document.getElementById('btn-reset').addEventListener('click', () => resetarJogoCompleto(true));
         document.getElementById('btn-reset-full').addEventListener('click', () => resetarJogoCompleto(false));
