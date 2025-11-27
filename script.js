@@ -1,148 +1,57 @@
-// --- FIREBASE IMPORTS ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { 
-    getAuth, signInAnonymously, signInWithCustomToken, 
-    onAuthStateChanged, signOut 
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { 
-    getFirestore, doc, setDoc, updateDoc, onSnapshot, 
-    collection, query, where, getDocs, deleteDoc 
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// setLogLevel('debug'); // MODO DEBUG ATIVO: Gera logs detalhados no console
-
 // --- Variáveis Globais de Configuração ---
-const NOME_BINGO = "🎉 BINGÃO DA SORTE ONLINE 🍀";
+const NOME_BINGO = "🎉 BINGÃO DA SORTE LOCAL 🍀";
 const DEFAULT_MAX = 90;
-const GAME_DOC_ID = 'state';
 
-// Variáveis de estado global (atualizadas via onSnapshot)
+// Chaves do LocalStorage
+const GLOBAL_STATE_KEY = 'bingoGlobalState';
+const CARTELAS_KEY = 'bingoCartelas';
+
+// Variáveis de estado global (carregadas do LocalStorage)
 let estadoGlobal = {
     intervaloMax: DEFAULT_MAX,
     numerosASortear: [],
     bolasSorteadas: [],
     vencedorEncontrado: false,
     vencedorCodigo: '',
-    cartelasCadastradas: {}
+    // cartelasCadastradas não está aqui, é salva separadamente
 };
 
-// --- Configuração Hardcoded (Fallback) ---
-// Usado se as variáveis do ambiente não estiverem disponíveis (ex: rodando localmente)
-const HARDCODED_CONFIG = {
-    apiKey: "AIzaSyAIK-T11hjYOHEG0BbSNCZjwcDwN0cgSrg",
-    authDomain: "bingo-f9782.firebaseapp.com",
-    projectId: "bingo-f9782",
-    storageBucket: "bingo-f9782.firebasestorage.app",
-    messagingSenderId: "232842656282",
-    appId: "1:232842656282:web:cd2143cd11ca5ea83cafa3"
-};
-
-
-// --- Configuração e Inicialização do Firebase ---
-let db;
-let auth;
-let userId = null;
-let isAuthReady = false;
-
-// Variáveis globais do ambiente (agora com fallbacks robustos)
-const appId = typeof __app_id !== 'undefined' 
-    ? __app_id 
-    : HARDCODED_CONFIG.projectId; // Fallback: usa o ID do projeto
-    
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-    ? JSON.parse(__firebase_config) 
-    : HARDCODED_CONFIG; // Fallback: usa a config hardcoded
-    
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// Caminho Firestore: /artifacts/{appId}/public/data/bingo_game/state
-const BINGO_DOC_PATH = `artifacts/${appId}/public/data/bingo_game/${GAME_DOC_ID}`;
+let cartelasCadastradas = {}; // Salvas e carregadas separadamente
 
 // ----------------------------------------------------
-// --- FIREBASE & AUTHENTICATION SETUP ---
+// --- FUNÇÕES DE PERSISTÊNCIA (Local Storage) ---
 // ----------------------------------------------------
 
-function setupFirebase() {
-    // Não precisa mais do 'if (Object.keys(firebaseConfig).length === 0)'
-    // porque o fallback garante que a configuração existe.
+function carregarEstado() {
+    // Carrega o estado global
+    const savedState = localStorage.getItem(GLOBAL_STATE_KEY);
+    if (savedState) {
+        estadoGlobal = JSON.parse(savedState);
+    }
+
+    // Carrega as cartelas
+    const savedCartelas = localStorage.getItem(CARTELAS_KEY);
+    if (savedCartelas) {
+        cartelasCadastradas = JSON.parse(savedCartelas);
+    }
     
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-        
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                userId = user.uid;
-            } else {
-                await signInAnonymously(auth);
-                userId = auth.currentUser?.uid || crypto.randomUUID();
-            }
-            isAuthReady = true;
-            
-            console.log(`[AUTH] Usuário ID: ${userId}. Autenticação pronta.`);
-            console.log(`[DB PATH] Documento do Jogo: ${BINGO_DOC_PATH}`);
-            
-            // Após autenticação, inicia a escuta do Firestore
-            startRealtimeListener();
-        });
-
-        if (initialAuthToken) {
-            signInWithCustomToken(auth, initialAuthToken).catch(e => {
-                console.warn("Erro ao usar token customizado:", e);
-                signInAnonymously(auth); // Fallback
-            });
-        } else {
-            signInAnonymously(auth); 
-        }
-
-    } catch (error) {
-        console.error("Erro ao inicializar Firebase:", error);
+    // Se o estado estiver vazio (primeira execução), inicializa
+    if (estadoGlobal.numerosASortear.length === 0 && estadoGlobal.bolasSorteadas.length === 0) {
+        estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax || DEFAULT_MAX, cartelasCadastradas);
+        salvarEstado();
     }
 }
 
-// ----------------------------------------------------
-// --- REAL-TIME DATA HANDLING (onSnapshot) ---
-// ----------------------------------------------------
-
-function startRealtimeListener() {
-    if (!isAuthReady || !db) return;
-
-    const gameDocRef = doc(db, BINGO_DOC_PATH);
-
-    onSnapshot(gameDocRef, (docSnapshot) => {
-        if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-            estadoGlobal = {
-                // Garante que o estado anterior não se perca se algum campo falhar
-                ...estadoGlobal, 
-                ...data,
-                // Garante que cartelasCadastradas seja sempre um objeto, mesmo que vazio
-                cartelasCadastradas: data.cartelasCadastradas || {} 
-            };
-            
-            console.log(`[SYNC OK] Estado lido do Firestore. Cartelas: ${Object.keys(estadoGlobal.cartelasCadastradas).length}`);
-            
-        } else {
-            // Documento não existe: Isto significa que precisamos criá-lo.
-            console.warn("[SYNC INIT] Documento do jogo não encontrado. Tentando criar o estado inicial...");
-            estadoGlobal = criarNovoEstado(DEFAULT_MAX, {});
-            salvarEstado(estadoGlobal, true); // Tenta criar o documento
-        }
-        
-        // Renderiza a interface da página atual
-        renderizarPaginaAtual();
-    }, (error) => {
-        console.error("[ERRO DE FIREBASE] Falha na escuta em tempo real:", error.code, error.message);
-        if (error.code === 'permission-denied') {
-            alert("ERRO CRÍTICO de Permissão: O Firebase está bloqueando a leitura ou escrita. Verifique suas REGRAS DE SEGURANÇA! (Allow read, write: if request.auth != null;)");
-        }
-    });
+function salvarEstado() {
+    // Salva o estado global
+    localStorage.setItem(GLOBAL_STATE_KEY, JSON.stringify(estadoGlobal));
+    
+    // Salva as cartelas
+    localStorage.setItem(CARTELAS_KEY, JSON.stringify(cartelasCadastradas));
 }
 
 // ----------------------------------------------------
-// --- FIREBASE DATA OPERATIONS (Set/Update) ---
+// --- FUNÇÕES DE LÓGICA DO JOGO ---
 // ----------------------------------------------------
 
 function criarNovoEstado(novoMax, cartelas) {
@@ -156,84 +65,46 @@ function criarNovoEstado(novoMax, cartelas) {
         bolasSorteadas: [],
         vencedorEncontrado: false,
         vencedorCodigo: '',
-        cartelasCadastradas: cartelas || {}
     };
 }
 
-/**
- * Salva o estado completo do jogo no Firestore.
- * @param {object} estado - O estado global atualizado.
- * @param {boolean} isNewDoc - Se for um novo documento (setDoc), caso contrário, usa updateDoc.
- */
-async function salvarEstado(estado, isNewDoc = false) {
-    if (!isAuthReady || !db) {
-        console.error("Firestore não está pronto.");
-        return false;
-    }
-
-    const docRef = doc(db, BINGO_DOC_PATH);
-    
-    try {
-        if (isNewDoc) {
-            await setDoc(docRef, estado);
-            console.log(`[SAVE SET] Documento criado/setado com sucesso.`);
-        } else {
-            await updateDoc(docRef, estado);
-            console.log(`[SAVE UPDATE] Documento atualizado com sucesso.`);
-        }
-    } catch (e) {
-        console.error("ERRO CRÍTICO ao salvar estado do jogo:", e);
-        return false;
-    }
-    return true;
-}
-
-// ----------------------------------------------------
-// --- FUNÇÕES DE CONTROLE DE JOGO ---
-// ----------------------------------------------------
-
-async function mudarConfiguracao() {
+function mudarConfiguracao() {
     const select = document.getElementById('select-bolas');
     const novoMax = parseInt(select.value);
 
     if (estadoGlobal.bolasSorteadas.length > 0 && 
         !confirm(`Mudar para ${novoMax} bolas irá reiniciar o jogo e apagar as bolas sorteadas. Deseja continuar?`)) {
+        // Volta o seletor para o valor anterior, se cancelado
+        select.value = estadoGlobal.intervaloMax;
         return;
     }
     
-    const novoEstado = criarNovoEstado(novoMax, estadoGlobal.cartelasCadastradas);
+    estadoGlobal = criarNovoEstado(novoMax, cartelasCadastradas);
+    salvarEstado();
     
-    const saved = await salvarEstado(novoEstado, false);
-    
-    if(saved) {
-        alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
-    } else {
-        alert('Erro ao salvar a nova configuração. Verifique as permissões do Firebase.');
-    }
+    alert(`Configuração alterada para Bingo de ${novoMax} bolas. Jogo reiniciado.`);
+    renderizarPaginaAtual(); // Renderiza com o novo estado
 }
 
-async function sortearBola() {
-    let estado = { ...estadoGlobal };
-    
-    if (!isAuthReady) return; 
-
-    if (estado.vencedorEncontrado) {
+function sortearBola() {
+    if (estadoGlobal.vencedorEncontrado) {
         document.getElementById('sorteio-status').innerHTML = '<p class="text-danger mt-3">🛑 O jogo já tem um vencedor.</p>';
         return;
     }
 
-    if (estado.numerosASortear.length === 0) {
+    if (estadoGlobal.numerosASortear.length === 0) {
         document.getElementById('sorteio-status').innerHTML = '<p class="text-danger mt-3">🛑 Todas as bolas foram sorteadas! Sem vencedor.</p>';
-        estado.vencedorEncontrado = true;
-        await salvarEstado(estado);
+        estadoGlobal.vencedorEncontrado = true;
+        salvarEstado();
+        renderizarPaginaAtual();
         return;
     }
     
     // 1. Sorteio
-    const bolaSorteada = estado.numerosASortear.pop();
-    estado.bolasSorteadas.push(bolaSorteada);
+    const bolaSorteada = estadoGlobal.numerosASortear.pop();
+    estadoGlobal.bolasSorteadas.push(bolaSorteada);
     
-    // Simula animação de destaque (o onSnapshot atualiza o número)
+    // Simula animação de destaque
     const bolaElement = document.getElementById('ultima-bola');
     if (bolaElement) {
         bolaElement.classList.add('bola-animada');
@@ -242,9 +113,10 @@ async function sortearBola() {
 
     // 2. Detecção de Vencedor
     let vencedor = null;
-    for (const codigo in estado.cartelasCadastradas) {
-        const numerosCartela = estado.cartelasCadastradas[codigo];
-        const isVencedor = numerosCartela.every(n => estado.bolasSorteadas.includes(n));
+    for (const codigo in cartelasCadastradas) {
+        const numerosCartela = cartelasCadastradas[codigo];
+        // Verifica se TODOS os números da cartela estão nas bolas sorteadas
+        const isVencedor = numerosCartela.every(n => estadoGlobal.bolasSorteadas.includes(n));
         
         if (isVencedor) {
             vencedor = codigo;
@@ -253,13 +125,14 @@ async function sortearBola() {
     }
 
     if (vencedor) {
-        estado.vencedorEncontrado = true;
-        estado.vencedorCodigo = vencedor;
+        estadoGlobal.vencedorEncontrado = true;
+        estadoGlobal.vencedorCodigo = vencedor;
         clearInterval(intervaloAutomatico);
     }
 
-    // 3. Salva o novo estado
-    await salvarEstado(estado);
+    // 3. Salva o novo estado e renderiza
+    salvarEstado();
+    renderizarPaginaAtual();
 }
 
 let intervaloAutomatico;
@@ -294,12 +167,11 @@ function toggleSorteioAutomatico() {
     }
 }
 
-async function cadastrarCartela() {
-    let estado = { ...estadoGlobal };
+function cadastrarCartela() {
     const codigoInput = document.getElementById('input-codigo').value.trim();
     const numerosInput = document.getElementById('input-numeros').value.trim();
     const mensagemDiv = document.getElementById('cadastro-mensagem');
-    const max = estado.intervaloMax;
+    const max = estadoGlobal.intervaloMax;
 
     mensagemDiv.textContent = ''; 
     
@@ -308,7 +180,7 @@ async function cadastrarCartela() {
         codigo = `PC-${Math.floor(Math.random() * 9999) + 1}`; 
     }
 
-    if (estado.cartelasCadastradas[codigo] && 
+    if (cartelasCadastradas[codigo] && 
         !confirm(`A cartela com código '${codigo}' já existe. Deseja substituí-la?`)) {
         mensagemDiv.textContent = 'Operação cancelada.';
         mensagemDiv.className = 'text-warning mt-2';
@@ -333,21 +205,15 @@ async function cadastrarCartela() {
         }
 
         // Atualiza a cópia local do estado e salva
-        estado.cartelasCadastradas[codigo] = numeros;
+        cartelasCadastradas[codigo] = numeros;
+        salvarEstado(); 
         
-        const saved = await salvarEstado(estado); 
+        document.getElementById('input-codigo').value = '';
+        document.getElementById('input-numeros').value = '';
+        mensagemDiv.textContent = `Cartela '${codigo}' cadastrada/atualizada com sucesso!`;
+        mensagemDiv.className = 'text-success mt-2';
         
-        if (saved) {
-            document.getElementById('input-codigo').value = '';
-            document.getElementById('input-numeros').value = '';
-            mensagemDiv.textContent = `Cartela '${codigo}' cadastrada/atualizada com sucesso!`;
-            mensagemDiv.className = 'text-success mt-2';
-        } else {
-             // A função salvarEstado já loga o erro, aqui apenas indicamos para o usuário
-            mensagemDiv.textContent = 'Erro ao salvar a cartela. Verifique as permissões do Firebase.';
-            mensagemDiv.className = 'text-danger mt-2';
-        }
-
+        renderizarPaginaAtual();
 
     } catch (e) {
         console.error("Erro geral ao cadastrar cartela:", e);
@@ -356,22 +222,18 @@ async function cadastrarCartela() {
     }
 }
 
-async function resetarJogoCompleto(manterCartelas = false) {
-    if (!isAuthReady) return;
-
-    let estado = { ...estadoGlobal };
-    const cartelasParaManter = manterCartelas ? estado.cartelasCadastradas : {};
-    
-    const novoEstado = criarNovoEstado(estado.intervaloMax, cartelasParaManter);
-    
-    const saved = await salvarEstado(novoEstado, false);
-    
-    if (saved) {
-        const msg = manterCartelas ? 'Jogo reiniciado! Cartelas mantidas.' : 'Reset Geral: Jogo e cartelas apagados.';
-        alert(msg);
-    } else {
-        alert('Erro ao resetar o jogo. Verifique as permissões do Firebase.');
+function resetarJogoCompleto(manterCartelas = false) {
+    if (!manterCartelas) {
+        cartelasCadastradas = {};
     }
+    
+    estadoGlobal = criarNovoEstado(estadoGlobal.intervaloMax, cartelasCadastradas);
+    
+    salvarEstado();
+    
+    const msg = manterCartelas ? 'Jogo reiniciado! Cartelas mantidas.' : 'Reset Geral: Jogo e cartelas apagados.';
+    alert(msg);
+    renderizarPaginaAtual();
 }
 
 // ----------------------------------------------------
@@ -382,18 +244,19 @@ function renderizarPaginaAtual() {
     // 1. Configura o cabeçalho em todas as páginas
     document.getElementById('bingo-title').textContent = NOME_BINGO;
     document.getElementById('footer-text').textContent = "By: An.Yoshi 2025";
+    document.getElementById('world-random-number').textContent = Math.floor(Math.random() * 9999999) + 1;
 
     // 2. Chama a função de renderização específica
     if (document.body.id === 'index-page') {
-        renderizarIndex(estadoGlobal);
+        renderizarIndex(estadoGlobal, cartelasCadastradas);
     } else if (document.body.id === 'admin-page') {
-        renderizarAdmin(estadoGlobal);
+        renderizarAdmin(estadoGlobal, cartelasCadastradas);
     }
 }
 
 // --- RENDERIZAÇÃO INDEX (Sorteio) ---
 
-function renderizarIndex(estado) {
+function renderizarIndex(estado, cartelas) {
     const ultimaBola = estado.bolasSorteadas.length > 0 ? estado.bolasSorteadas.slice(-1)[0] : '—';
     document.getElementById('ultima-bola').textContent = String(ultimaBola).padStart(2, '0');
     
@@ -404,7 +267,7 @@ function renderizarIndex(estado) {
     
     if (estado.vencedorEncontrado) {
         if (estado.vencedorCodigo) {
-             exibirVencedor(estado.vencedorCodigo, estado.cartelasCadastradas, estado.bolasSorteadas);
+             exibirVencedor(estado.vencedorCodigo, cartelas, estado.bolasSorteadas);
         } else {
              statusDiv.innerHTML = '<p class="text-danger mt-3">🛑 Todas as bolas foram sorteadas! Sem vencedor.</p>';
         }
@@ -447,7 +310,7 @@ function exibirVencedor(codigoVencedor, cartelas, bolasSorteadas) {
 
 // --- RENDERIZAÇÃO ADMIN (Controle) ---
 
-function renderizarAdmin(estado) {
+function renderizarAdmin(estado, cartelas) {
     const select = document.getElementById('select-bolas');
     if (select && select.value != estado.intervaloMax) {
         select.value = estado.intervaloMax;
@@ -457,11 +320,10 @@ function renderizarAdmin(estado) {
         <p>Configuração Atual: **${estado.intervaloMax} Bolas** (1 - ${estado.intervaloMax})</p>
         <p>Bolas Restantes: **${estado.numerosASortear.length}**</p>
         <p>Vencedor Encontrado: ${estado.vencedorEncontrado ? '<span class="text-danger">SIM</span>' : '<span class="text-success">NÃO</span>'}</p>
-        <p class="mt-2">ID do Usuário: <code class="bg-light text-dark p-1 rounded">${userId || 'Aguardando...'}</code></p>
     `;
     
-    renderizarCartelasCadastradas(estado.cartelasCadastradas);
-    atualizarPainelAnalise(estado.cartelasCadastradas, estado.bolasSorteadas, estado.intervaloMax);
+    renderizarCartelasCadastradas(cartelas);
+    atualizarPainelAnalise(cartelas, estado.bolasSorteadas, estado.intervaloMax);
 }
 
 function renderizarCartelasCadastradas(cartelas) {
@@ -552,20 +414,23 @@ function atualizarPainelAnalise(cartelas, bolasSorteadas, max) {
 
 // --- EVENT LISTENERS GERAIS ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Inicializa o Firebase e a autenticação
-    setupFirebase();
+    // 1. Carrega o estado e as cartelas
+    carregarEstado();
 
-    // 2. Adiciona listeners após a inicialização (eles usarão estadoGlobal)
+    // 2. Adiciona listeners 
     if (document.body.id === 'index-page') {
         document.getElementById('btn-sortear').addEventListener('click', sortearBola);
         document.getElementById('btn-sortear-auto').addEventListener('click', toggleSorteioAutomatico);
 
     } else if (document.body.id === 'admin-page') {
-        // Listener para o botão Salvar Configuração
+        // Listener para o botão Salvar Configuração (que chama mudarConfiguracao)
         document.getElementById('btn-salvar-config').addEventListener('click', mudarConfiguracao);
         
         document.getElementById('btn-cadastrar').addEventListener('click', cadastrarCartela);
         document.getElementById('btn-reset').addEventListener('click', () => resetarJogoCompleto(true));
         document.getElementById('btn-reset-full').addEventListener('click', () => resetarJogoCompleto(false));
     }
+
+    // Renderiza a interface inicial (após carregar o estado)
+    renderizarPaginaAtual();
 });
