@@ -10,7 +10,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// setLogLevel('debug'); // Descomente para debug de console no console do navegador
+// setLogLevel('debug'); // MODO DEBUG ATIVO: Gera logs detalhados no console
 
 // --- Variáveis Globais de Configuração ---
 const NOME_BINGO = "🎉 BINGÃO DA SORTE ONLINE 🍀";
@@ -27,15 +27,33 @@ let estadoGlobal = {
     cartelasCadastradas: {}
 };
 
+// --- Configuração Hardcoded (Fallback) ---
+// Usado se as variáveis do ambiente não estiverem disponíveis (ex: rodando localmente)
+const HARDCODED_CONFIG = {
+    apiKey: "AIzaSyAIK-T11hjYOHEG0BbSNCZjwcDwN0cgSrg",
+    authDomain: "bingo-f9782.firebaseapp.com",
+    projectId: "bingo-f9782",
+    storageBucket: "bingo-f9782.firebasestorage.app",
+    messagingSenderId: "232842656282",
+    appId: "1:232842656282:web:cd2143cd11ca5ea83cafa3"
+};
+
+
 // --- Configuração e Inicialização do Firebase ---
 let db;
 let auth;
 let userId = null;
 let isAuthReady = false;
 
-// Variáveis globais do ambiente
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// Variáveis globais do ambiente (agora com fallbacks robustos)
+const appId = typeof __app_id !== 'undefined' 
+    ? __app_id 
+    : HARDCODED_CONFIG.projectId; // Fallback: usa o ID do projeto
+    
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+    ? JSON.parse(__firebase_config) 
+    : HARDCODED_CONFIG; // Fallback: usa a config hardcoded
+    
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // Caminho Firestore: /artifacts/{appId}/public/data/bingo_game/state
@@ -46,11 +64,9 @@ const BINGO_DOC_PATH = `artifacts/${appId}/public/data/bingo_game/${GAME_DOC_ID}
 // ----------------------------------------------------
 
 function setupFirebase() {
-    if (Object.keys(firebaseConfig).length === 0) {
-        console.error("Firebase Configuração não encontrada. Usando modo de simulação.");
-        return;
-    }
-
+    // Não precisa mais do 'if (Object.keys(firebaseConfig).length === 0)'
+    // porque o fallback garante que a configuração existe.
+    
     try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
@@ -66,6 +82,7 @@ function setupFirebase() {
             isAuthReady = true;
             
             console.log(`[AUTH] Usuário ID: ${userId}. Autenticação pronta.`);
+            console.log(`[DB PATH] Documento do Jogo: ${BINGO_DOC_PATH}`);
             
             // Após autenticação, inicia a escuta do Firestore
             startRealtimeListener();
@@ -105,11 +122,11 @@ function startRealtimeListener() {
                 cartelasCadastradas: data.cartelasCadastradas || {} 
             };
             
-            console.log(`[SYNC] Estado lido do Firestore. Cartelas: ${Object.keys(estadoGlobal.cartelasCadastradas).length}`);
+            console.log(`[SYNC OK] Estado lido do Firestore. Cartelas: ${Object.keys(estadoGlobal.cartelasCadastradas).length}`);
             
         } else {
             // Documento não existe: Isto significa que precisamos criá-lo.
-            console.warn("[SYNC] Documento do jogo não encontrado. Tentando criar o estado inicial...");
+            console.warn("[SYNC INIT] Documento do jogo não encontrado. Tentando criar o estado inicial...");
             estadoGlobal = criarNovoEstado(DEFAULT_MAX, {});
             salvarEstado(estadoGlobal, true); // Tenta criar o documento
         }
@@ -119,7 +136,7 @@ function startRealtimeListener() {
     }, (error) => {
         console.error("[ERRO DE FIREBASE] Falha na escuta em tempo real:", error.code, error.message);
         if (error.code === 'permission-denied') {
-            alert("ERRO CRÍTICO de Permissão: O Firebase está bloqueando a leitura ou escrita. Verifique suas REGRAS DE SEGURANÇA!");
+            alert("ERRO CRÍTICO de Permissão: O Firebase está bloqueando a leitura ou escrita. Verifique suas REGRAS DE SEGURANÇA! (Allow read, write: if request.auth != null;)");
         }
     });
 }
@@ -151,7 +168,7 @@ function criarNovoEstado(novoMax, cartelas) {
 async function salvarEstado(estado, isNewDoc = false) {
     if (!isAuthReady || !db) {
         console.error("Firestore não está pronto.");
-        return;
+        return false;
     }
 
     const docRef = doc(db, BINGO_DOC_PATH);
@@ -159,13 +176,13 @@ async function salvarEstado(estado, isNewDoc = false) {
     try {
         if (isNewDoc) {
             await setDoc(docRef, estado);
+            console.log(`[SAVE SET] Documento criado/setado com sucesso.`);
         } else {
             await updateDoc(docRef, estado);
+            console.log(`[SAVE UPDATE] Documento atualizado com sucesso.`);
         }
-        console.log(`[SAVE] Estado salvo com sucesso. Novo Max: ${estado.intervaloMax}. Cartelas: ${Object.keys(estado.cartelasCadastradas).length}`);
     } catch (e) {
         console.error("ERRO CRÍTICO ao salvar estado do jogo:", e);
-        // Não usamos alert aqui para não interromper loops, o onSnapshot lidará com o erro de permissão.
         return false;
     }
     return true;
